@@ -6,7 +6,6 @@ resource "aws_vpc" "VPC" {
     Name = "APWPMS"
   }
 }
-
 resource "aws_subnet" "Public_Subnet" {
   cidr_block              = var.CIDR_Pub_Subnet
   vpc_id                  = aws_vpc.VPC.id
@@ -16,7 +15,6 @@ resource "aws_subnet" "Public_Subnet" {
     Name = "Public Subnet"
   }
 }
-
 resource "aws_subnet" "Private_Subnet" {
   cidr_block = var.CIDR_Pr_Subnet
   vpc_id     = aws_vpc.VPC.id
@@ -24,64 +22,51 @@ resource "aws_subnet" "Private_Subnet" {
     Name = "Private Subnet"
   }
 }
-
 resource "aws_internet_gateway" "InternetGateway" {
   vpc_id = aws_vpc.VPC.id
   tags = {
     Name = "IGW for APWP(Pb Subnet)"
   }
 }
-
 resource "aws_route_table" "PbRouteTable" {
   vpc_id = aws_vpc.VPC.id
-
   route {
     cidr_block = "0.0.0.0/0"
     gateway_id = aws_internet_gateway.InternetGateway.id
   }
-
   tags = {
     Name = "Route Table for Pb Subnet"
   }
 }
-
 resource "aws_route_table_association" "SubnetAssociationFrPBRT" {
   subnet_id      = aws_subnet.Public_Subnet.id
   route_table_id = aws_route_table.PbRouteTable.id
 }
-
 resource "aws_eip" "MyEIP" {
   vpc = true
 }
-
 resource "aws_nat_gateway" "NatGateway" {
   allocation_id = aws_eip.MyEIP.id
   subnet_id     = aws_subnet.Public_Subnet.id
 }
-
 resource "aws_route_table" "PrRouteTable" {
   vpc_id = aws_vpc.VPC.id
-
   route {
     cidr_block = "0.0.0.0/0"
     gateway_id = aws_nat_gateway.NatGateway.id
   }
-
   tags = {
     Name = "Route Table for Pr Subnet"
   }
 }
-
 resource "aws_route_table_association" "SubnetAssociationFrPRRT" {
   subnet_id      = aws_subnet.Private_Subnet.id
   route_table_id = aws_route_table.PrRouteTable.id
 }
-
 resource "aws_security_group" "LbSecurityGroup" {
   name        = "LoadBalSgforAPWP"
   description = "Allow all resources through http to load balancer"
   vpc_id      = aws_vpc.VPC.id
-
   ingress {
     description = "Allow all resources through http to load balancer"
     from_port   = 80
@@ -89,7 +74,6 @@ resource "aws_security_group" "LbSecurityGroup" {
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
-
   egress {
     from_port   = 0
     to_port     = 0
@@ -97,12 +81,10 @@ resource "aws_security_group" "LbSecurityGroup" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
-
 resource "aws_security_group" "APWPInnerSg" {
   name        = "SgforAPWP"
   description = "Allow all resources through http to via lbsg as source"
   vpc_id      = aws_vpc.VPC.id
-
   ingress {
     description     = "Allow all resources through http to via lbsg as source"
     from_port       = 80
@@ -117,11 +99,9 @@ resource "aws_security_group" "APWPInnerSg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
-
 resource "aws_security_group" "SecurityGroupFrPrInstance" {
   name   = "SgforPrivateSubnetInstance"
   vpc_id = aws_vpc.VPC.id
-
   ingress {
     from_port   = 80
     to_port     = 80
@@ -159,7 +139,6 @@ resource "aws_security_group" "SecurityGroupFrPrInstance" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
-
 resource "aws_instance" "InstanceforAPWP" {
   ami             = "ami-0a91cd140a1fc148a"
   instance_type   = var.Instance_Type_APWP
@@ -212,7 +191,6 @@ resource "aws_instance" "InstanceforMySQL" {
     "Name" = "Instance for MySQL"
   }
 }
-
 resource "aws_subnet" "Public_Subnet2" {
   cidr_block        = "10.0.3.0/24"
   vpc_id            = aws_vpc.VPC.id
@@ -221,7 +199,6 @@ resource "aws_subnet" "Public_Subnet2" {
     Name = "Extra Public Subnet for LB"
   }
 }
-
 resource "aws_launch_configuration" "LaunchConfiguration" {
   name                        = "APWPLC"
   image_id                    = "ami-03946fd338928596f"
@@ -235,14 +212,12 @@ resource "aws_launch_configuration" "LaunchConfiguration" {
                                 sudo service apache2 restart
                                 EOF              
 }
-
 resource "aws_lb_target_group" "TargetGroup" {
   name     = "TgforAPWPASG"
   port     = 80
   protocol = "HTTP"
   vpc_id   = aws_vpc.VPC.id
 }
-
 resource "aws_autoscaling_group" "AutoScalingGroup" {
   name                      = var.ASGname
   max_size                  = 3
@@ -255,14 +230,22 @@ resource "aws_autoscaling_group" "AutoScalingGroup" {
   target_group_arns         = [aws_lb_target_group.TargetGroup.arn]
 }
 
+resource "aws_autoscaling_policy" "ScalingPolicy" {
 resource "aws_autoscaling_policy" "ScaleUPPolicy" {
   name                   = "ScalingPolicyfrAPWPASG"
   adjustment_type        = "ChangeInCapacity"
   autoscaling_group_name = aws_autoscaling_group.AutoScalingGroup.name
+  policy_type            = "TargetTrackingScaling"
+  target_tracking_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ASGAverageCPUUtilization"
+    }
   scaling_adjustment     = 1
   cooldown               = 60
 }
 
+    target_value = 70.0
+  }
 resource "aws_autoscaling_policy" "ScaleDownPolicy" {
   name                   = "ScalingPolicyfrAPWPASG"
   adjustment_type        = "ChangeInCapacity"
@@ -306,10 +289,8 @@ resource "aws_lb" "LoadBalancer" {
   load_balancer_type = "application"
   security_groups    = [aws_security_group.LbSecurityGroup.id]
   subnets            = [aws_subnet.Public_Subnet.id, aws_subnet.Public_Subnet2.id]
-
   ip_address_type = "ipv4"
 }
-
 resource "aws_lb_listener" "Listener" {
   load_balancer_arn = aws_lb.LoadBalancer.arn
   port              = 80
@@ -319,7 +300,6 @@ resource "aws_lb_listener" "Listener" {
     target_group_arn = aws_lb_target_group.TargetGroup.arn
   }
 }
-
 output "Load_Balancer_DNS" {
   value = aws_lb.LoadBalancer.dns_name
 }
